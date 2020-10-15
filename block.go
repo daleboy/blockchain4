@@ -34,7 +34,8 @@ func NewBlock(transactions []*Transaction, prevBlockHash []byte) *Block {
 	return block
 }
 
-// HashTransactions 计算交易数组的哈希值
+// HashTransactions 计算交易组合的哈希值
+//获得每笔交易的哈希，将它们关联起来，然后获得一个连接后的组合哈希
 func (b *Block) HashTransactions() []byte {
 	var txHashes [][]byte
 	var txHash [32]byte

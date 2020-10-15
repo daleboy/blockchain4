@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/gob"
+	"encoding/hex"
 	"fmt"
 	"log"
 )
@@ -87,6 +88,43 @@ func NewCoinbaseTX(to, data string) *Transaction {
 	txin := TxInput{[]byte{}, -1, data}
 	txout := TxOutput{subsidy, to}                             //本次交易的输出结构：奖励值为subsidy，奖励给地址to（当然也只有地址to可以解锁使用这笔钱）
 	tx := Transaction{nil, []TxInput{txin}, []TxOutput{txout}} //交易ID设为nil
+
+	return &tx
+}
+
+//NewUTXOTransaction 创建一个资金转移交易
+func NewUTXOTransaction(from, to string, amount int, bc *Blockchain) *Transaction {
+	var inputs []TxInput
+	var outputs []TxOutput
+
+	acc, validOutputs := bc.FindSpendableOutput(from, amount)
+
+	if acc < amount {
+		log.Panic("ERROR:没有足够的钱。")
+	}
+
+	//构建输入参数（列表）
+	for txid, outs := range validOutputs {
+		txID, err := hex.DecodeString(txid)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		for _, out := range outs {
+			input := TxInput{txID, out, from}
+			inputs = append(inputs, input)
+		}
+
+	}
+
+	//构建输出参数（列表）
+	outputs = append(outputs, TxOutput{amount, to})
+	if acc > amount {
+		outputs = append(outputs, TxOutput{acc - amount, from}) //找零
+	}
+
+	tx := Transaction{nil, inputs, outputs} //初始交易ID设为nil
+	tx.SetID()                              //紧接着设置交易的ID
 
 	return &tx
 }
