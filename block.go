@@ -54,6 +54,7 @@ func NewGenesisBlock(coninbase *Transaction) *Block {
 }
 
 //Serialize Block序列化
+//特别注意，block对象的任何不以大写字母开头命令的变量，其值都不会被序列化到[]byte中
 func (b *Block) Serialize() []byte {
 	var result bytes.Buffer //定义一个buffer存储序列化后的数据
 

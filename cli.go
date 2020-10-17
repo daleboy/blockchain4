@@ -9,9 +9,7 @@ import (
 )
 
 //CLI 响应处理命令行参数
-type CLI struct {
-	BC *Blockchain
-}
+type CLI struct{}
 
 //createBlockchain 创建全新区块链
 func (cli *CLI) createBlockchain(address string) {
@@ -29,7 +27,7 @@ func (cli *CLI) getBalance(address string) {
 	UTXOs := bc.FindUTXO(address)
 
 	for _, out := range UTXOs {
-		balance += out.value
+		balance += out.Value
 	}
 
 	fmt.Printf("Balance of '%s':%d\n", address, balance)
@@ -46,7 +44,7 @@ func (cli *CLI) printUsage() {
 
 //validateArgs 校验命令，如果无效，打印使用说明
 func (cli *CLI) validateArgs() {
-	if len(os.Args) < 2 { //所有命令至少有两个参数
+	if len(os.Args) < 2 { //所有命令至少有两个参数，第一个是程序名称，第二个是命名名称
 		cli.printUsage()
 		os.Exit(1)
 	}
@@ -54,7 +52,9 @@ func (cli *CLI) validateArgs() {
 
 // printChain 打印区块，从最新到最旧，直到打印完成创始区块
 func (cli *CLI) printChain() {
-	bci := cli.BC.Iterator()
+	bc := NewBlockchain()
+	defer bc.Db.Close()
+	bci := bc.Iterator()
 
 	for {
 		block := bci.Next()

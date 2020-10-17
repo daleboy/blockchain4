@@ -81,7 +81,13 @@ func CreatBlockchain(address string) *Blockchain {
 			log.Panic(err)
 		}
 
-		//插入创始区块信息到数据库，没有用到事务
+		d := genesis.Serialize()
+		err = b.Put(genesis.Hash, d) //将创始区块序列化后插入到数据库表中
+		if err != nil {
+			log.Panic(err)
+		}
+
+		//插入Tip到数据库，没有用到事务
 		err = b.Put([]byte("1"), genesis.Hash)
 		if err != nil {
 			log.Panic(err)
@@ -144,57 +150,59 @@ func (bc *Blockchain) FindUnspentTransaction(address string) []Transaction {
 	//在go中，映射的值可以是数组，所以这里创建一个映射来存储未花费输出
 	spentTXOs := make(map[string][]int)
 
+	//从区块链中取得所有已花费输出
 	bci := bc.Iterator()
-
 	for { //第一层循环，对区块链中的所有区块进行迭代查询
 		block := bci.Next()
 
-		for _, tx := range block.Transactions {
-			txID := hex.EncodeToString(tx.ID) //交易ID转为字符串，便于比较
-
+		for _, tx := range block.Transactions { //第二层循环，对单个区块中的所有交易进行循环：一个区块可能打包了多个交易
 			//检查交易的输入，将所有可以解锁的引用的输出加入到已花费输出map中
 			if tx.IsCoinbase() == false { //不适用于创始区块的交易，因为它没有引用输出
-				for _, in := range tx.Vin {
-					if in.CanUnlockOutputWith(address) {
+				for _, in := range tx.Vin { //第三层循环，对单个交易中的所有输入进行循环（一个交易可能有多个输入）
+					if in.CanUnlockOutputWith(address) { //可以被address解锁，即属于address发起的交易（sender）
 						inTxID := hex.EncodeToString(in.Txid)
 						//in.Vout为引用输出在该交易所有输出中的一个索引
-						spentTXOs[inTxID] = append(spentTXOs[inTxID], in.Vout)
+						spentTXOs[inTxID] = append(spentTXOs[inTxID], in.Vout) //加入到已花费映射之中
 					}
 				}
 			}
+		}
+		if len(block.PrevBlockHash) == 0 { //创始区块都检查完了，退出最外层循环
+			break
+		}
+	}
+
+	//获得未花费交易
+	bci = bc.Iterator()
+	for { //第一层循环，对区块链中的所有区块进行迭代查询
+		block := bci.Next()
+
+		for _, tx := range block.Transactions { //第二层循环，对单个区块中的所有交易进行循环：一个区块可能打包了多个交易
+			txID := hex.EncodeToString(tx.ID) //交易ID转为字符串，便于比较
 
 		Outputs:
-			for outIdx, out := range tx.Vout {
+			for outIdx, out := range tx.Vout { //第三层循环，对单个交易中的所有输出进行循环（一个交易可能有多个输出）
 				//检查交易的输出，OutIdx为数组序号，实际上也是某个TxOutput的索引，out为TxOutput
 				//一个交易，可能会有多个输出
 				//输出是否已经花费了？
 				if spentTXOs[txID] != nil {
-					for _, spentOut := range spentTXOs[txID] { //spentOut是value
+					for _, spentOut := range spentTXOs[txID] { //第四层循环，对前面获得的所有未花费输出进行循环，spentOut是value
 						//根据输出引用不可再分规则，
 						//只要有一个输出值被引用，那么该输出的所有值都被引用了
 						//所以通过比较索引值，只要发现一个输出值被引用了，就不必查询下一个输出值了
-						//说明该输出已经被引用（花费掉了）
+						//说明该输出已经被引用（被包含在其它交易的输入之中，即被花费掉了）
 						if spentOut == outIdx {
-							continue Outputs
+							continue Outputs //在 continue 语句后添加标签Outputs时，表示开始标签Outputs对应的循环
 						}
 					}
 				}
 
-				//输出没有花费，且可以用address解锁（归address用户所有）
+				//输出没有被花费，且可以用address解锁（即归address用户所有）
 				if out.CanBeUnlockedWith(address) {
 					unspentTXs = append(unspentTXs, *tx) //将tx值加入到已花费交易数组中
 				}
 			}
-			//检查交易的输入，将所有可以解锁的引用的输出加入到已花费输出map中
-			/*if tx.IsCoinbase() == false { //不适用于创始区块的交易，因为它没有引用输出
-				for _, in := range tx.Vin {
-					if in.CanUnlockOutputWith(address) {
-						inTxID := hex.EncodeToString(in.Txid)
-						//in.Vout为引用输出在该交易所有输出中的一个索引
-						spentTXOs[inTxID] = append(spentTXOs[inTxID], in.Vout)
-					}
-				}
-			}*/
+
 		}
 		if len(block.PrevBlockHash) == 0 { //创始区块都检查完了，退出最外层循环
 			break
@@ -209,7 +217,7 @@ func (bc *Blockchain) FindUTXO(address string) []TxOutput {
 	unspentTransactions := bc.FindUnspentTransaction(address)
 	for _, tx := range unspentTransactions {
 		for _, out := range tx.Vout {
-			//FindUnspentTransaction已经做了检查，所以这里的检查多此一举？
+			//FindUnspentTransaction已经做了检查，保险起见，这里做一个冗余检查
 			if out.CanBeUnlockedWith(address) {
 				UTXOs = append(UTXOs, out)
 			}
@@ -242,7 +250,7 @@ func NewBlockchain() *Blockchain {
 
 	err = db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(blocksBucket)) //通过名称获得bucket
-		tip = b.Get([]byte("1"))             //获得创始区块的哈希
+		tip = b.Get([]byte("1"))             //获得最后区块的哈希
 
 		return nil
 	})
@@ -261,7 +269,7 @@ func NewBlockchain() *Blockchain {
 func (bc *Blockchain) FindSpendableOutput(address string, amount int) (int, map[string][]int) {
 	unpsentOutputs := make(map[string][]int)
 	unspentTXs := bc.FindUnspentTransaction(address)
-	accumulated := 0
+	accumulated := 0 //sender发出的转出的全部币数
 
 Work:
 	for _, tx := range unspentTXs {
@@ -269,7 +277,7 @@ Work:
 
 		for outIdx, out := range tx.Vout {
 			if out.CanBeUnlockedWith(address) && accumulated < amount {
-				accumulated += out.value
+				accumulated += out.Value
 				unpsentOutputs[txID] = append(unpsentOutputs[txID], outIdx)
 
 				if accumulated >= amount {

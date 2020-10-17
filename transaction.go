@@ -43,7 +43,7 @@ type TxInput struct {
 
 //TxOutput 交易的输出
 type TxOutput struct {
-	value int //输出里面存储的“币”
+	Value int //输出里面存储的“币”
 
 	//解锁脚本（比特币里面是一个脚本，这里是用户的钱包地址），定义了
 	//解锁该输出的逻辑。
@@ -81,7 +81,7 @@ func (out *TxOutput) CanBeUnlockedWith(unlockingData string) bool {
 //NewCoinbaseTX 创建一个区块链创始交易
 func NewCoinbaseTX(to, data string) *Transaction {
 	if data == "" {
-		data = fmt.Sprintf("Reward to %s", to) //fmt.Sprintf将数据格式化后赋值给变量data
+		data = fmt.Sprintf("奖励给%s", to) //fmt.Sprintf将数据格式化后赋值给变量data
 	}
 
 	//初始交易输入结构：引用输出的交易为空:引用交易的ID为空，交易输出值为设为-1
@@ -97,6 +97,8 @@ func NewUTXOTransaction(from, to string, amount int, bc *Blockchain) *Transactio
 	var inputs []TxInput
 	var outputs []TxOutput
 
+	//validOutputs为sender为此交易提供的输出，不一定是sender的全部输出
+	//acc为sender发出的全部币数
 	acc, validOutputs := bc.FindSpendableOutput(from, amount)
 
 	if acc < amount {
@@ -120,7 +122,7 @@ func NewUTXOTransaction(from, to string, amount int, bc *Blockchain) *Transactio
 	//构建输出参数（列表）
 	outputs = append(outputs, TxOutput{amount, to})
 	if acc > amount {
-		outputs = append(outputs, TxOutput{acc - amount, from}) //找零
+		outputs = append(outputs, TxOutput{acc - amount, from}) //找零，退给sender
 	}
 
 	tx := Transaction{nil, inputs, outputs} //初始交易ID设为nil
