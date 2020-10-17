@@ -197,7 +197,7 @@ func (bc *Blockchain) FindUnspentTransaction(address string) []Transaction {
 					}
 				}
 
-				//输出没有被花费，且可以用address解锁（即归address用户所有）
+				//输出没有被花费，由address锁定（即归address用户所有）
 				if out.CanBeUnlockedWith(address) {
 					unspentTXs = append(unspentTXs, *tx) //将tx值加入到已花费交易数组中
 				}
